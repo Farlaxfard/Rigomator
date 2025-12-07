@@ -79,12 +79,11 @@ swagger optional.
 
 ## 🖼 gallery
 
-replace these with your own screenshots:
+cool gallery.
 
 <img src="./images/welcome.png" width="100%" />
-<img src="./images/hand-tracking.png" width="100%" />
-<img src="./images/control-panel.png" width="100%" />
-<img src="./images/environment.png" width="100%" />
+<img src="./images/hand-tracking.png" width="50%" />
+<img src="./images/environment.png" width="50%" />
 
 ---
 
