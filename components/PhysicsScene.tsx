@@ -1,7 +1,7 @@
 
 /// <reference lib="dom" />
 import React, { useRef, useEffect, useState, useMemo } from 'react';
-import { Canvas, useFrame, useThree, useLoader } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Physics, useBox, useSphere, useCylinder, useConvexPolyhedron, usePlane } from '@react-three/cannon';
 import { Stars, Grid, Sparkles, Sky, Environment, Torus, RoundedBox, Float } from '@react-three/drei';
 import { EffectComposer, Bloom, Vignette, ChromaticAberration, HueSaturation, Noise, Scanline } from '@react-three/postprocessing';
@@ -834,8 +834,8 @@ const PostProcessing = () => {
           <Bloom luminanceThreshold={0.6} mipmapBlur intensity={settings.bloomIntensity} radius={0.5} />
           <Vignette eskil={false} offset={0.1} darkness={settings.vignetteIntensity} />
           <ChromaticAberration ref={abRef} offset={new THREE.Vector2(0.005, 0.005)} radialModulation={true} modulationOffset={0.7} />
-          {settings.filmGrain > 0 && <Noise opacity={settings.filmGrain} />}
-          {settings.scanlineIntensity > 0 && <Scanline density={1.25} opacity={settings.scanlineIntensity} />}
+          {settings.filmGrain > 0 ? <Noise opacity={settings.filmGrain} /> : null}
+          {settings.scanlineIntensity > 0 ? <Scanline density={1.25} opacity={settings.scanlineIntensity} /> : null}
         </EffectComposer>
     );
 };
