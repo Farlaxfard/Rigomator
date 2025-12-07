@@ -1,0 +1,27 @@
+
+{
+  "pauseTexts": [
+    "touch grass.", "why pause?", "afk?", "scared?", "fingers tired?", "weak.", "cringe pause.", "skill issue.", "loading excuses...", "rage quit?",
+    "mom called?", "battery low?", "brain buffer?", "nice hands tho.", "take a breath.", "hydrate.", "blink twice.", "system halted.", "matrix glitched.", "rendering...",
+    "coffee break.", "u good?", "just play.", "don't stop.", "momentum lost.", "recalculating.", "buffering...", "lag?", "packet loss?", "404 motivation.",
+    "brb?", "okay...", "whatever.", "sure.", "fine.", "stopping time.", "za warudo.", "frozen.", "chill.", "zen mode.",
+    "meditate.", "reflect.", "breathe.", "pause champ.", "speedrun fail.", "reset mental.", "go again.", "locked in.", "not locked in.", "zoned out.",
+    "controller died?", "keyboard disconnect?", "mouse trap?", "cat on desk?", "dog barking?", "pizza here?", "doorbell?", "phone ringing?", "texting?", "scrolling?",
+    "doomscrolling?", "tiktok break?", "check twitter?", "touching grass?", "looking outside?", "blinking?", "sleeping?", "napping?", "dreaming?", "hallucinating?",
+    "simulating...", "processing...", "computing...", "calculating...", "analyzing...", "observing...", "waiting...", "idling...", "standby...", "sleep mode...",
+    "screensaver.", "power saving.", "low energy.", "recharging.", "cooling down.", "overheated.", "throttled.", "bottlenecked.", "framedrop.", "stutter.",
+    "glitch.", "bug?", "feature.", "intended.", "by design.", "user error.", "pebkac.", "layer 8 issue.", "skill gap.", "diff."
+  ],
+  "disconnectTexts": [
+    "hand gone.", "where hand?", "ghost hand.", "invisible man.", "cam blind.", "too dark?", "turn lights on.", "hand missing.", "amputated?", "magic trick.",
+    "now you see me.", "now you don't.", "vanished.", "poof.", "gone.", "lost signal.", "no data.", "null pointer.", "undefined.", "void.",
+    "abyss.", "darkness.", "shadow realm.", "disconnected.", "offline.", "unplugged.", "cut wire.", "bad cable.", "potato cam.", "upgrade setup.",
+    "buy lights.", "too shaky.", "parkinsons?", "hold still.", "stop moving.", "too fast.", "blur city.", "focus.", "unfocused.", "blurry.",
+    "smudged lens.", "clean cam.", "dirty lens.", "dusty.", "foggy.", "misty.", "cloudy.", "stormy.", "rainy.", "snowy.",
+    "interference.", "static.", "noise.", "grain.", "distortion.", "artifacting.", "glitching.", "bugging out.", "crashing.", "failing.",
+    "dying.", "dead.", "rip.", "gg.", "ff.", "surrender.", "give up.", "try again.", "reset.", "restart.",
+    "reboot.", "reload.", "refresh.", "reconnect.", "plugin.", "wire up.", "sync up.", "tune in.", "dial in.", "lock in.",
+    "get good.", "skill check.", "vibe check.", "failed.", "error.", "warning.", "alert.", "danger.", "critical.", "fatal.",
+    "system failure.", "os crash.", "bsod.", "blue screen.", "red ring.", "kernel panic.", "segmentation fault.", "stack overflow.", "memory leak.", "infinite loop."
+  ]
+}

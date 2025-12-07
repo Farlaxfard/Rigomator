@@ -1,0 +1,7 @@
+{
+  "name": "Rigomator",
+  "description": "A high-fidelity hand-tracking physics sandbox with liquid simulation and AI-powered roasting.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
