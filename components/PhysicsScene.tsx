@@ -834,8 +834,9 @@ const PostProcessing = () => {
           <Bloom luminanceThreshold={0.6} mipmapBlur intensity={settings.bloomIntensity} radius={0.5} />
           <Vignette eskil={false} offset={0.1} darkness={settings.vignetteIntensity} />
           <ChromaticAberration ref={abRef} offset={new THREE.Vector2(0.005, 0.005)} radialModulation={true} modulationOffset={0.7} />
-          {settings.filmGrain > 0 ? <Noise opacity={settings.filmGrain} /> : null}
-          {settings.scanlineIntensity > 0 ? <Scanline density={1.25} opacity={settings.scanlineIntensity} /> : null}
+          {/* Casting to any to avoid strict 'ReactElement' type check for null/false values */}
+          {(settings.filmGrain > 0 ? <Noise opacity={settings.filmGrain} /> : null) as any}
+          {(settings.scanlineIntensity > 0 ? <Scanline density={1.25} opacity={settings.scanlineIntensity} /> : null) as any}
         </EffectComposer>
     );
 };
