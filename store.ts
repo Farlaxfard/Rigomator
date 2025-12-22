@@ -107,7 +107,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     headRotationSensitivity: 0.5, // Changed to 0.5
     
     // Visuals - Defaults from screenshot
-    enableEffects: true,
+    enableEffects: false,
     filmGrain: 0.04,
     chromaticAberration: 0.05,
     vignetteIntensity: 0.10,

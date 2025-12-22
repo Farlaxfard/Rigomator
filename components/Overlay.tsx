@@ -372,7 +372,7 @@ export default function Overlay() {
       if (val < 0.4) return "Slow";
       if (val < 0.6) return "Normal";
       if (val < 0.8) return "Fast";
-      return "FASTER THAN SPACEX 🚀";
+      return "FAST AF 🚀";
   }
 
   return (
