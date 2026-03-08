@@ -1,6 +1,6 @@
 
 /// <reference lib="dom" />
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { FilesetResolver, HandLandmarker, FaceLandmarker } from '@mediapipe/tasks-vision';
 import { useStore } from '../store';
 import { GestureType, GestureMetrics } from '../types';
@@ -11,17 +11,17 @@ import { GestureType, GestureMetrics } from '../types';
  */
 const HandManager: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const { 
-    setHandData, 
-    setFaceData, 
-    cameraIndex, 
-    setCameraSwitching, 
-    setCameraName,
-    isPaused,
-    setVideoStream,
-    cameraEnabled,
-    setCameraBrightness
-  } = useStore();
+  
+  // Selectors for minimal re-renders
+  const setHandData = useStore(s => s.setHandData);
+  const setFaceData = useStore(s => s.setFaceData);
+  const cameraIndex = useStore(s => s.cameraIndex);
+  const setCameraSwitching = useStore(s => s.setCameraSwitching);
+  const setCameraName = useStore(s => s.setCameraName);
+  const isPaused = useStore(s => s.isPaused);
+  const setVideoStream = useStore(s => s.setVideoStream);
+  const cameraEnabled = useStore(s => s.cameraEnabled);
+  const setCameraBrightness = useStore(s => s.setCameraBrightness);
   
   const lastVideoTime = useRef(-1);
   const lastPredictionTime = useRef(0);
@@ -43,17 +43,19 @@ const HandManager: React.FC = () => {
     const initMediaPipe = async () => {
       try {
         const vision = await FilesetResolver.forVisionTasks(
-          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32/wasm"
         );
         
         const confidence = 0.65;
+        // Adaptive delegate: GPU if available, else CPU
+        const delegate = (window as any).WebGLRenderingContext ? "GPU" : "CPU";
 
         // Parallel load
         const [handLandmarker, faceLandmarker] = await Promise.all([
             HandLandmarker.createFromOptions(vision, {
               baseOptions: {
                 modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
-                delegate: "GPU"
+                delegate
               },
               runningMode: "VIDEO",
               numHands: 1,
@@ -64,7 +66,7 @@ const HandManager: React.FC = () => {
             FaceLandmarker.createFromOptions(vision, {
               baseOptions: {
                   modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
-                  delegate: "GPU"
+                  delegate
               },
               runningMode: "VIDEO",
               numFaces: 1,
@@ -96,125 +98,7 @@ const HandManager: React.FC = () => {
     };
   }, []);
 
-  useEffect(() => {
-      if (isModelLoaded && videoRef.current && !videoRef.current.paused && !isPredicting.current) {
-          predictWebcam();
-      }
-  }, [isModelLoaded]);
-
-  useEffect(() => {
-      const shouldRun = cameraEnabled && !isPaused;
-      
-      if (shouldRun) {
-          // If a stream exists (e.g. from previous camera index), stop it first to allow switching
-          if (streamRef.current) {
-              stopWebcam();
-          }
-          startWebcam();
-      } else {
-          stopWebcam();
-      }
-  }, [cameraIndex, cameraEnabled, isPaused]);
-
-  const stopWebcam = () => {
-      if (streamRef.current) {
-          streamRef.current.getTracks().forEach(track => track.stop());
-          streamRef.current = null;
-          setVideoStream(null);
-          setHandData({ present: false });
-          setFaceData({ present: false });
-          setCameraName("camera disabled");
-      }
-      if (videoRef.current) videoRef.current.srcObject = null;
-      isPredicting.current = false;
-      if (requestRef.current) {
-          cancelAnimationFrame(requestRef.current);
-          requestRef.current = null;
-      }
-  }
-
-  const startWebcam = async () => {
-    if (!cameraEnabled || isPaused) return; 
-
-    try {
-      // 1. Get initial list of devices
-      let devices = await (navigator as any).mediaDevices.enumerateDevices();
-      let videoDevices = devices.filter((device: any) => device.kind === 'videoinput');
-
-      // 2. Permission Check: If devices found but no labels/IDs, or no devices at all, force a generic request
-      // This triggers the browser permission popup
-      if (videoDevices.length === 0 || !videoDevices[0].deviceId || !videoDevices[0].label) {
-          try {
-             // Request generic video access just to trigger permission
-             const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
-             // Stop immediately, we just needed the permission
-             tempStream.getTracks().forEach(track => track.stop());
-             
-             // Re-enumerate now that we have permission
-             devices = await (navigator as any).mediaDevices.enumerateDevices();
-             videoDevices = devices.filter((device: any) => device.kind === 'videoinput');
-          } catch (permErr) {
-             console.warn("Permission request failed or cancelled:", permErr);
-             // Proceed anyway, usually getUserMedia below will throw the real error
-          }
-      }
-      
-      if (videoDevices.length === 0) {
-          console.error("No video input devices found.");
-          setCameraName("no camera found");
-          setCameraSwitching(false);
-          return;
-      }
-
-      const deviceIndex = cameraIndex % videoDevices.length;
-      const device = videoDevices[deviceIndex];
-      const deviceLabel = device.label || `Camera ${deviceIndex + 1}`;
-      setCameraName(deviceLabel);
-
-      // Build constraints
-      const constraints: MediaStreamConstraints = {
-          video: { 
-              width: { ideal: 640 }, 
-              height: { ideal: 480 }, 
-              frameRate: { ideal: 30 } 
-          } 
-      };
-
-      // Only add specific deviceId if it exists and is not empty
-      if (device.deviceId && device.deviceId !== "") {
-          (constraints.video as MediaTrackConstraints).deviceId = { exact: device.deviceId };
-      }
-
-      const stream = await (navigator as any).mediaDevices.getUserMedia(constraints);
-      
-      streamRef.current = stream;
-      setVideoStream(stream);
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        const playAndPredict = () => {
-           videoRef.current?.play().catch(e => console.error("Play failed", e));
-           if (!isPredicting.current && handLandmarkerRef.current) {
-             predictWebcam();
-           }
-        };
-        if (videoRef.current.readyState >= 2) playAndPredict();
-        else videoRef.current.onloadeddata = playAndPredict;
-      }
-      setTimeout(() => setCameraSwitching(false), 800);
-    } catch (err) {
-      console.error("Critical Camera Error:", err);
-      setCameraSwitching(false);
-      setCameraName("camera error");
-    }
-  };
-
-  // Helper for Euclidean distance without creating objects
-  const dist = (x1: number, y1: number, z1: number, x2: number, y2: number, z2: number) => {
-      return Math.sqrt(Math.pow(x1-x2, 2) + Math.pow(y1-y2, 2) + Math.pow(z1-z2, 2));
-  }
-
-  const predictWebcam = () => {
+  const predictWebcam = useCallback(() => {
     if (!cameraEnabled || isPaused) {
         isPredicting.current = false;
         return;
@@ -302,13 +186,18 @@ const HandManager: React.FC = () => {
             // Calculations using rawLandmarks (0-1 space)
             const wrist = rawLandmarks[0];
             
+            // Helper for Euclidean distance squared (faster for comparisons)
+            const distSq = (x1: number, y1: number, z1: number, x2: number, y2: number, z2: number) => {
+                return Math.pow(x1-x2, 2) + Math.pow(y1-y2, 2) + Math.pow(z1-z2, 2);
+            }
+
             // Helper for extension score
             const getScore = (tip: number, pip: number) => {
                 const tipLm = rawLandmarks[tip];
                 const pipLm = rawLandmarks[pip];
-                const dTip = dist(tipLm.x, tipLm.y, tipLm.z, wrist.x, wrist.y, wrist.z);
-                const dPip = dist(pipLm.x, pipLm.y, pipLm.z, wrist.x, wrist.y, wrist.z);
-                const ratio = dTip / dPip;
+                const dTipSq = distSq(tipLm.x, tipLm.y, tipLm.z, wrist.x, wrist.y, wrist.z);
+                const dPipSq = distSq(pipLm.x, pipLm.y, pipLm.z, wrist.x, wrist.y, wrist.z);
+                const ratio = Math.sqrt(dTipSq / dPipSq);
                 return Math.min(1, Math.max(0, (ratio - 0.8) / 0.4));
             };
 
@@ -320,8 +209,9 @@ const HandManager: React.FC = () => {
 
             const t = rawLandmarks[4];
             const i = rawLandmarks[8];
-            const pinchDist = dist(t.x, t.y, t.z, i.x, i.y, i.z);
-            const pinchScore = Math.max(0, 1 - (pinchDist / 0.12)); 
+            const pinchDistSq = distSq(t.x, t.y, t.z, i.x, i.y, i.z);
+            // Increased threshold from 0.12 to 0.18 to make it easier to trigger
+            const pinchScore = Math.max(0, 1 - (Math.sqrt(pinchDistSq) / 0.18)); 
 
             const avgFingerExt = (indexScore + middleScore + ringScore + pinkyScore) / 4;
             const othersCurledStrict = (1 - indexScore) * (1 - middleScore) * (1 - ringScore);
@@ -369,7 +259,7 @@ const HandManager: React.FC = () => {
               rigLandmarks,
               gesture,
               metrics,
-              pinchDistance: pinchDist,
+              pinchDistance: Math.sqrt(pinchDistSq),
               worldPosition: [wx, wy, wz]
             });
         } else {
@@ -379,7 +269,111 @@ const HandManager: React.FC = () => {
         // Drop frames silently
       }
     }
-  };
+  }, [cameraEnabled, isPaused, setCameraBrightness, setFaceData, setHandData]);
+
+  useEffect(() => {
+      if (isModelLoaded && videoRef.current && !videoRef.current.paused && !isPredicting.current) {
+          predictWebcam();
+      }
+  }, [isModelLoaded, predictWebcam]);
+
+  const stopWebcam = useCallback(() => {
+      if (streamRef.current) {
+          streamRef.current.getTracks().forEach(track => track.stop());
+          streamRef.current = null;
+          setVideoStream(null);
+          setHandData({ present: false });
+          setFaceData({ present: false });
+          setCameraName("camera disabled");
+      }
+      if (videoRef.current) videoRef.current.srcObject = null;
+      isPredicting.current = false;
+      if (requestRef.current) {
+          cancelAnimationFrame(requestRef.current);
+          requestRef.current = null;
+      }
+  }, [setVideoStream, setHandData, setFaceData, setCameraName]);
+
+  const startWebcam = useCallback(async () => {
+    if (!cameraEnabled || isPaused) return; 
+
+    try {
+      // 1. Get initial list of devices
+      let devices = await (navigator as any).mediaDevices.enumerateDevices();
+      let videoDevices = devices.filter((device: any) => device.kind === 'videoinput');
+
+      // 2. Permission Check
+      if (videoDevices.length === 0 || !videoDevices[0].deviceId || !videoDevices[0].label) {
+          try {
+             const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+             tempStream.getTracks().forEach(track => track.stop());
+             devices = await (navigator as any).mediaDevices.enumerateDevices();
+             videoDevices = devices.filter((device: any) => device.kind === 'videoinput');
+          } catch (permErr) {
+             console.warn("Permission request failed or cancelled:", permErr);
+          }
+      }
+      
+      if (videoDevices.length === 0) {
+          console.error("No video input devices found.");
+          setCameraName("no camera found");
+          setCameraSwitching(false);
+          return;
+      }
+
+      const deviceIndex = cameraIndex % videoDevices.length;
+      const device = videoDevices[deviceIndex];
+      const deviceLabel = device.label || `Camera ${deviceIndex + 1}`;
+      setCameraName(deviceLabel);
+
+      const constraints: MediaStreamConstraints = {
+          video: { 
+              width: { ideal: 640 }, 
+              height: { ideal: 480 }, 
+              frameRate: { ideal: 30 } 
+          } 
+      };
+
+      if (device.deviceId && device.deviceId !== "") {
+          (constraints.video as MediaTrackConstraints).deviceId = { exact: device.deviceId };
+      }
+
+      const stream = await (navigator as any).mediaDevices.getUserMedia(constraints);
+      
+      streamRef.current = stream;
+      setVideoStream(stream);
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        const playAndPredict = () => {
+           videoRef.current?.play().catch(e => console.error("Play failed", e));
+           if (!isPredicting.current && handLandmarkerRef.current) {
+             predictWebcam();
+           }
+        };
+        if (videoRef.current.readyState >= 2) playAndPredict();
+        else videoRef.current.onloadeddata = playAndPredict;
+      }
+      setTimeout(() => setCameraSwitching(false), 800);
+    } catch (err) {
+      console.error("Critical Camera Error:", err);
+      setCameraSwitching(false);
+      setCameraName("camera error");
+    }
+  }, [cameraEnabled, isPaused, cameraIndex, setCameraName, setCameraSwitching, setVideoStream, predictWebcam]);
+
+  useEffect(() => {
+      const shouldRun = cameraEnabled && !isPaused;
+      
+      if (shouldRun) {
+          if (streamRef.current) {
+              stopWebcam();
+          }
+          startWebcam();
+      } else {
+          stopWebcam();
+      }
+  }, [cameraIndex, cameraEnabled, isPaused, startWebcam, stopWebcam]);
 
   return (
     <video ref={videoRef} autoPlay playsInline muted className="hidden" style={{ transform: "scaleX(-1)" }} />

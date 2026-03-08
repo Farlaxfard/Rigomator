@@ -1,6 +1,6 @@
 
 /// <reference lib="dom" />
-import React, { useRef, useEffect, useState, useMemo } from 'react';
+import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Physics, useBox, useSphere, useCylinder, useConvexPolyhedron, usePlane } from '@react-three/cannon';
 import { Stars, Grid, Sparkles, Sky, Environment, Torus, RoundedBox, Float } from '@react-three/drei';
@@ -47,7 +47,7 @@ const Boundaries = () => {
 
 // --- HAND DROP SHADOW ---
 const HandDropShadow = () => {
-    const { handData } = useStore();
+    const handData = useStore(s => s.handData);
     const shadowRef = useRef<THREE.Mesh>(null);
 
     useFrame(() => {
@@ -77,7 +77,7 @@ const HandDropShadow = () => {
 
 // --- GAME OF LIFE (OPTIMIZED) ---
 const GameOfLifeFloor = () => {
-    const { handData } = useStore();
+    const handData = useStore(s => s.handData);
     const rows = 30;
     const cols = 30;
     const count = rows * cols;
@@ -183,7 +183,7 @@ const GameOfLifeFloor = () => {
 
 // --- ENVIRONMENTS ---
 const EnvironmentManager = React.memo(() => {
-    const { settings } = useStore();
+    const settings = useStore(s => s.settings);
     return (
         <group>
             {settings.gameOfLife && <GameOfLifeFloor />}
@@ -370,46 +370,55 @@ const CloudVisual = React.memo(({ color }: { color: string }) => {
 
 const SmartObjectDispatcher = React.memo((props: PhysicsObjectType) => {
     const { id, type, position, color, velocity: initVelocity } = props;
-    const { settings, cameraBrightness, addCloudRef, removeCloudRef } = useStore();
+    const settings = useStore(s => s.settings);
+    const cameraBrightness = useStore(s => s.cameraBrightness);
+    const addCloudRef = useStore(s => s.addCloudRef);
+    const removeCloudRef = useStore(s => s.removeCloudRef);
     
     // Determine Shape and Material
-    let shape: ShapeType = settings.objectShape;
-    let matType: MaterialType = settings.objectMaterial;
-    let radius = 0.5;
+    const { shape, matType, radius } = useMemo(() => {
+        let shape: ShapeType = settings.objectShape;
+        let matType: MaterialType = settings.objectMaterial;
+        let radius = 0.5;
 
-    // Type overrides
-    if (type === 'liquid') {
-        shape = 'sphere';
-        matType = 'glass';
-        radius = 0.2;
-    } else if (type === 'cloud') {
-        shape = 'sphere';
-        matType = 'plastic'; // Ignored, using custom visual
-        radius = 1.5;
-    }
+        // Type overrides
+        if (type === 'liquid') {
+            shape = 'sphere';
+            matType = 'glass';
+            radius = 0.2;
+        } else if (type === 'cloud') {
+            shape = 'sphere';
+            matType = 'plastic'; // Ignored, using custom visual
+            radius = 1.5;
+        }
+        return { shape, matType, radius };
+    }, [type, settings.objectShape, settings.objectMaterial]);
 
     // Physics Hook Selection
-    let hookFn: any = useBox;
-    let args: any = [1,1,1];
+    const { hookFn, args } = useMemo(() => {
+        let hookFn: any = useBox;
+        let args: any = [1,1,1];
 
-    if (shape === 'sphere' || shape === 'icosahedron' || shape === 'dodecahedron' || type === 'cloud') {
-        hookFn = useSphere;
-        args = [radius];
-    } else if (shape === 'cylinder' || shape === 'pyramid') {
-        hookFn = useCylinder;
-        args = [0.5, 0.5, 1, 16];
-    } else if (shape === 'capsule') {
-        hookFn = useSphere; args = [0.5]; 
-    } else if (shape === 'torus') {
-        hookFn = useBox; args = [1, 0.4, 1];
-    }
+        if (shape === 'sphere' || shape === 'icosahedron' || shape === 'dodecahedron' || type === 'cloud') {
+            hookFn = useSphere;
+            args = [radius];
+        } else if (shape === 'cylinder' || shape === 'pyramid') {
+            hookFn = useCylinder;
+            args = [0.5, 0.5, 1, 16];
+        } else if (shape === 'capsule') {
+            hookFn = useSphere; args = [0.5]; 
+        } else if (shape === 'torus') {
+            hookFn = useBox; args = [1, 0.4, 1];
+        }
+        return { hookFn, args };
+    }, [shape, type, radius]);
 
     const mass = type === 'liquid' ? 0.1 : (type === 'cloud' ? 0.1 : 1);
     const linearDamping = type === 'cloud' ? 0.95 : 0.05;
 
     const safePosition = useMemo(() => [Number(position[0]), Number(position[1]), Number(position[2])] as [number, number, number], [position]);
     
-    const onCollide = (e: any) => {
+    const onCollide = useCallback((e: any) => {
         if (!e || !e.body) return; // Prevent crash if body is undefined
         if (type === 'cloud') return; 
 
@@ -417,7 +426,7 @@ const SmartObjectDispatcher = React.memo((props: PhysicsObjectType) => {
         if (impact > 1.5) {
              audio.play3D('collide', [0,0,0], settings.soundVolume * Math.min(1, impact/10));
         }
-    }
+    }, [type, settings.soundVolume]);
 
     // @ts-ignore
     const [ref, api] = hookFn(() => ({ 
@@ -431,7 +440,7 @@ const SmartObjectDispatcher = React.memo((props: PhysicsObjectType) => {
         allowSleep: true, // HARD OPTIMIZATION: Sleeping bodies save CPU
         sleepSpeedLimit: 0.1,
         sleepTimeLimit: 1
-    }));
+    }), [mass, safePosition, args, onCollide, linearDamping, initVelocity, settings.bounciness, settings.friction]);
 
     // Update phys material dynamically
     useEffect(() => {
@@ -439,7 +448,7 @@ const SmartObjectDispatcher = React.memo((props: PhysicsObjectType) => {
     }, [settings.bounciness, settings.friction, api]);
 
     const isGrabbed = useRef(false);
-    const { handData } = useStore();
+    const handData = useStore(s => s.handData);
     const velocity = useRef([0,0,0]);
     useEffect(() => api.velocity.subscribe((v: any) => { velocity.current = v }), [api.velocity]);
     
@@ -457,6 +466,9 @@ const SmartObjectDispatcher = React.memo((props: PhysicsObjectType) => {
     useFrame((state) => {
         // Run logic only if rigid body is active
         if (ref.current) {
+            // PULLED DIRECTLY FROM STORE FOR 0-LATENCY 💅
+            const latestHand = useStore.getState().handData;
+            const latestGesture = latestHand.gesture;
             
             // PROXIMITY TINT LOGIC - OPTIMIZED to use Squared Distance
             // Only check if we are not a cloud
@@ -498,34 +510,39 @@ const SmartObjectDispatcher = React.memo((props: PhysicsObjectType) => {
                 }
             }
 
-            // Grab Logic
-            if (handData.present && handData.gesture === GestureType.PINCH) {
+            // Grab Logic - reworked for absolute clinginess 💅
+            if (latestHand.present && latestGesture === GestureType.PINCH) {
                  _bodyPos.copy(ref.current.position); 
-                 _handPos.set(handData.worldPosition[0], handData.worldPosition[1], handData.worldPosition[2]);
-                 // Distance check
+                 _handPos.set(latestHand.worldPosition[0], latestHand.worldPosition[1], latestHand.worldPosition[2]);
                  const sqDist = _handPos.distanceToSquared(_bodyPos);
                  
-                 // Radius 3.5 -> Squared 12.25
-                 if (sqDist < 12.25) isGrabbed.current = true;
-                 else if (sqDist > 25) isGrabbed.current = false; // Hysteresis release
+                 // if we're close enough, start the haunting
+                 // larger radius (60) because we're desperate for connection 💀
+                 if (sqDist < 60) isGrabbed.current = true; 
                  
                  if (isGrabbed.current) {
-                     // Spring Physics
-                     const stiffness = 150; 
-                     const damping = 10;
-                     const forceX = (_handPos.x - _bodyPos.x) * stiffness - velocity.current[0] * damping;
-                     const forceY = (_handPos.y - _bodyPos.y) * stiffness - velocity.current[1] * damping;
-                     const forceZ = (_handPos.z - _bodyPos.z) * stiffness - velocity.current[2] * damping;
-                     api.wakeUp(); 
-                     api.applyForce([forceX, forceY, forceZ], [0,0,0]); 
+                     api.wakeUp();
+                     // god-mode movement: we tell the object exactly where to be
+                     // snapSpeed 40 for instant results 🌌
+                     const snapSpeed = 40; 
+                     api.velocity.set(
+                         (_handPos.x - _bodyPos.x) * snapSpeed,
+                         (_handPos.y - _bodyPos.y) * snapSpeed,
+                         (_handPos.z - _bodyPos.z) * snapSpeed
+                     );
                      api.angularDamping.set(0.9); 
-                     api.linearDamping.set(0); 
+                     api.linearDamping.set(0.1); 
                  }
              } else { 
+                 // the ghost is gone. goodbye. 🌌
+                 if (isGrabbed.current) {
+                     // give it a little toss based on the last known speed
+                     api.velocity.set(velocity.current[0], velocity.current[1], velocity.current[2]);
+                 }
                  isGrabbed.current = false; 
              }
              
-             if (handData.gesture === GestureType.CLOSED_FIST && !isGrabbed.current) { 
+             if (latestGesture === GestureType.CLOSED_FIST && !isGrabbed.current) { 
                  api.linearDamping.set(0.99); api.angularDamping.set(0.99); 
              } else if (!isGrabbed.current) { 
                  // Reset damping
@@ -590,7 +607,8 @@ const Bone: React.FC<{ start: number[], end: number[], material: THREE.MeshStand
 
 // IMPROVED HAND PHYSICS: Kinematic Velocity
 const PhysicsJoint: React.FC<{ index: number, material: THREE.Material }> = ({ index, material }) => {
-    const { handData, settings } = useStore();
+    const handData = useStore(s => s.handData);
+    const settings = useStore(s => s.settings);
     const [ref, api] = useSphere(() => ({ 
         type: 'Kinematic', 
         args: [0.25], 
@@ -641,7 +659,8 @@ const PhysicsJoint: React.FC<{ index: number, material: THREE.Material }> = ({ i
 };
 
 const SphereHandRig = React.memo(() => {
-    const { handData, settings } = useStore();
+    const handData = useStore(s => s.handData);
+    const settings = useStore(s => s.settings);
     const jointIndices = useMemo(() => Array.from({ length: 21 }, (_, i) => i), []);
     const connections = useMemo(() => [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [0, 9], [9, 10], [10, 11], [11, 12], [0, 13], [13, 14], [14, 15], [15, 16], [0, 17], [17, 18], [18, 19], [19, 20]], []);
     
@@ -694,7 +713,11 @@ const SphereHandRig = React.memo(() => {
 });
 
 const HeadTrackingCamera = () => {
-    const { faceData, isCameraSwitching, handData, cameraResetTrigger, settings } = useStore();
+    const faceData = useStore(s => s.faceData);
+    const isCameraSwitching = useStore(s => s.isCameraSwitching);
+    const handData = useStore(s => s.handData);
+    const cameraResetTrigger = useStore(s => s.cameraResetTrigger);
+    const settings = useStore(s => s.settings);
     const { camera } = useThree();
     const introTime = useRef(0);
     const hasIntroFinished = useRef(false);
@@ -767,7 +790,10 @@ const HeadTrackingCamera = () => {
 }
 
 const GameLogic = () => {
-    const { handData, addObject, settings, clearObjects } = useStore();
+    const handData = useStore(s => s.handData);
+    const addObject = useStore(s => s.addObject);
+    const settings = useStore(s => s.settings);
+    const clearObjects = useStore(s => s.clearObjects);
     const [lastSpawnTime, setLastSpawnTime] = useState(0);
     const [lastClearTime, setLastClearTime] = useState(0);
     const wasPresent = useRef(false);
@@ -814,7 +840,9 @@ const GameLogic = () => {
 // --- MAIN SCENE ---
 
 const PostProcessing = () => {
-    const { settings, isCameraSwitching, handData } = useStore();
+    const settings = useStore(s => s.settings);
+    const isCameraSwitching = useStore(s => s.isCameraSwitching);
+    const handData = useStore(s => s.handData);
     const abRef = useRef<any>(null);
 
     useFrame((state) => {
@@ -842,7 +870,10 @@ const PostProcessing = () => {
 };
 
 const PhysicsScene: React.FC = () => {
-  const { objects, handData, settings, isPaused } = useStore();
+  const objects = useStore(s => s.objects);
+  const handData = useStore(s => s.handData);
+  const settings = useStore(s => s.settings);
+  const isPaused = useStore(s => s.isPaused);
   const isSlowMo = handData.gesture === GestureType.CLOSED_FIST;
   const physicsStep = (1 / 60) * settings.timeScale;
   

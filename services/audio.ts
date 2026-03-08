@@ -2,21 +2,29 @@
 import { useStore } from '../store';
 
 export class AudioEngine {
-    ctx: AudioContext;
-    masterGain: GainNode;
+    private _ctx: AudioContext | null = null;
+    private _masterGain: GainNode | null = null;
     droneOsc: OscillatorNode | null = null;
     droneGain: GainNode | null = null;
     
-    constructor() {
-        // @ts-ignore
-        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-        this.ctx = new AudioCtx();
-        const limiter = this.ctx.createDynamicsCompressor();
-        limiter.threshold.value = -2;
-        this.masterGain = this.ctx.createGain();
-        this.masterGain.gain.value = 0.8;
-        limiter.connect(this.masterGain);
-        this.masterGain.connect(this.ctx.destination);
+    get ctx() {
+        if (!this._ctx) {
+            // @ts-ignore
+            const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+            this._ctx = new AudioCtx();
+            const limiter = this._ctx.createDynamicsCompressor();
+            limiter.threshold.value = -2;
+            this._masterGain = this._ctx.createGain();
+            this._masterGain.gain.value = 0.8;
+            limiter.connect(this._masterGain);
+            this._masterGain.connect(this._ctx.destination);
+        }
+        return this._ctx;
+    }
+
+    get masterGain() {
+        this.ctx; // Trigger getter
+        return this._masterGain!;
     }
 
     checkInit() {
@@ -38,7 +46,7 @@ export class AudioEngine {
 
     updateDrone(velocity: number) {
         if (!this.droneOsc) this.startDrone();
-        if (!this.droneOsc || !this.droneGain) return;
+        if (!this._ctx || this._ctx.state === 'suspended' || !this.droneOsc || !this.droneGain) return;
         
         const intensity = Math.min(1, velocity / 10);
         const targetFreq = 60 + (intensity * 80);

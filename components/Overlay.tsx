@@ -1,6 +1,6 @@
 
 /// <reference lib="dom" />
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useStore } from '../store';
 import { GestureType, EnvironmentType, ShapeType, MaterialType } from '../types';
 import { audio } from '../services/audio';
@@ -23,7 +23,7 @@ const CustomCursor: React.FC = () => {
     const [pos, setPos] = useState({ x: -100, y: -100 });
     const [hovering, setHovering] = useState(false);
     const [pressing, setPressing] = useState(false);
-    const { isPaused } = useStore();
+    const isPaused = useStore(s => s.isPaused);
 
     useEffect(() => {
         const move = (e: MouseEvent) => setPos({ x: e.clientX, y: e.clientY });
@@ -204,18 +204,36 @@ const SpringSlider: React.FC<{
  * Overlay Component
  */
 export default function Overlay() {
-  const { 
-      isHandLost, handData, faceData, setHandLost, 
-      roastMessage, setRoastMessage, debugMode, toggleDebugMode,
-      cycleCamera, cameraName, settings, updateSettings,
-      showTutorial, setShowTutorial, bannerMessage, setBannerMessage,
-      showTrainingUI, setShowTrainingUI, resetApp,
-      isPaused, setPaused,
-      pauseMessage,
-      isMuted, toggleMute, clearObjects, videoStream,
-      getRandomDisconnectText, cameraEnabled, toggleCamera,
-      getRandomMiddleFingerText, addObject, cycleEnvironment
-  } = useStore();
+  const isHandLost = useStore(s => s.isHandLost);
+  const handData = useStore(s => s.handData);
+  const faceData = useStore(s => s.faceData);
+  const setHandLost = useStore(s => s.setHandLost);
+  const roastMessage = useStore(s => s.roastMessage);
+  const setRoastMessage = useStore(s => s.setRoastMessage);
+  const cycleCamera = useStore(s => s.cycleCamera);
+  const cameraName = useStore(s => s.cameraName);
+  const settings = useStore(s => s.settings);
+  const updateSettings = useStore(s => s.updateSettings);
+  const showTutorial = useStore(s => s.showTutorial);
+  const setShowTutorial = useStore(s => s.setShowTutorial);
+  const bannerMessage = useStore(s => s.bannerMessage);
+  const setBannerMessage = useStore(s => s.setBannerMessage);
+  const showTrainingUI = useStore(s => s.showTrainingUI);
+  const setShowTrainingUI = useStore(s => s.setShowTrainingUI);
+  const resetApp = useStore(s => s.resetApp);
+  const isPaused = useStore(s => s.isPaused);
+  const setPaused = useStore(s => s.setPaused);
+  const pauseMessage = useStore(s => s.pauseMessage);
+  const isMuted = useStore(s => s.isMuted);
+  const toggleMute = useStore(s => s.toggleMute);
+  const clearObjects = useStore(s => s.clearObjects);
+  const videoStream = useStore(s => s.videoStream);
+  const getRandomDisconnectText = useStore(s => s.getRandomDisconnectText);
+  const cameraEnabled = useStore(s => s.cameraEnabled);
+  const toggleCamera = useStore(s => s.toggleCamera);
+  const getRandomMiddleFingerText = useStore(s => s.getRandomMiddleFingerText);
+  const addObject = useStore(s => s.addObject);
+  const cycleEnvironment = useStore(s => s.cycleEnvironment);
 
   const [lastGesture, setLastGesture] = useState<GestureType>(GestureType.NONE);
   const [gestureText, setGestureText] = useState("");
@@ -243,7 +261,7 @@ export default function Overlay() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isPaused, setPaused]);
 
-  const playClick = () => {
+  const playClick = useCallback(() => {
       if (isMuted) return;
       const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
       const osc = ctx.createOscillator();
@@ -252,29 +270,29 @@ export default function Overlay() {
       gain.gain.setValueAtTime(0.05, ctx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
       osc.connect(gain); gain.connect(ctx.destination);
       osc.start(); osc.stop(ctx.currentTime + 0.1);
-  };
+  }, [isMuted]);
 
-  const handleTutorialDismiss = () => {
+  const handleTutorialDismiss = useCallback(() => {
       playClick();
       setIsTutorialExiting(true);
       setTimeout(() => { setShowTutorial(false); setIsTutorialExiting(false); }, 600);
-  };
+  }, [playClick, setShowTutorial]);
 
   useEffect(() => {
       if (showTutorial && !isTutorialExiting && handData.gesture === GestureType.OPEN_PALM) {
           handleTutorialDismiss();
       }
-  }, [showTutorial, isTutorialExiting, handData.gesture]);
+  }, [showTutorial, isTutorialExiting, handData.gesture, handleTutorialDismiss]);
 
-  const handlePanelToggle = () => {
+  const handlePanelToggle = useCallback(() => {
       playClick();
-      setIsPanelExpanded(!isPanelExpanded);
-  };
+      setIsPanelExpanded(prev => !prev);
+  }, [playClick]);
 
   // Logo Interaction
-  const handleLogoHover = () => {
+  const handleLogoHover = useCallback(() => {
       addObject('cloud', [(Math.random()-0.5)*10, 20, (Math.random()-0.5)*5], [0,-2,0]);
-  }
+  }, [addObject]);
 
   useEffect(() => {
       if (cameraName) { setShowCameraBanner(true); const t = setTimeout(() => setShowCameraBanner(false), 3000); return () => clearTimeout(t); }
@@ -308,7 +326,7 @@ export default function Overlay() {
       checkRoast();
       checkEnvCycle();
       setLastGesture(handData.gesture);
-  }, [handData.gesture, lastGesture, setBannerMessage, getRandomMiddleFingerText, cycleEnvironment]);
+  }, [handData.gesture, lastGesture, setBannerMessage, getRandomMiddleFingerText, cycleEnvironment, playClick]);
 
   useEffect(() => {
     let timeout: ReturnType<typeof setTimeout>;
