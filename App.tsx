@@ -10,9 +10,10 @@ const App: React.FC = () => {
 
   return (
     <div 
-      className={`w-full h-screen bg-gray-900 relative overflow-hidden select-none font-['Dongle'] text-2xl leading-none ${isPaused ? 'cursor-auto' : 'cursor-none'}`}
+      className={`w-full h-screen bg-[#050505] relative overflow-hidden select-none font-['Dongle'] text-2xl leading-none tracking-tight transition-colors duration-1000 animate-fade-in`}
       onContextMenu={(e) => e.preventDefault()}
     >
+      <div className="vignette-overlay" />
       <HandManager />
       
       <div className="absolute inset-0 z-0">

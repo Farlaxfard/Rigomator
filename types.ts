@@ -21,6 +21,8 @@ export interface FaceData {
   present: boolean;
   position: { x: number, y: number, z: number }; // Center of face mapped to world bounds
   rotation: { x: number, y: number, z: number };
+  rawPosition?: { x: number, y: number, z: number }; // Normalized 0-1
+  rawRotation?: { x: number, y: number, z: number }; // Euler angles
 }
 
 export interface GestureMetrics {
@@ -31,16 +33,20 @@ export interface GestureMetrics {
   pointing: number;
   pinkyUp: number;
   threeFingers: number;
+  middleFinger: number;
 }
 
 export interface HandData {
   present: boolean;
+  handedness: 'left' | 'right' | 'none';
+  color: string; // Sampled skin/hand color
   landmarks: HandPosition[]; // Normalized
   rigLandmarks: [number, number, number][]; // Projected 3D coordinates for all 21 joints
   gesture: GestureType;
   metrics: GestureMetrics; // Confidence levels
   pinchDistance: number;
   worldPosition: [number, number, number]; // Dynamic Centroid (Tip or Pinch Center)
+  velocity: [number, number, number]; // Current hand velocity in world space
 }
 
 export interface PhysicsObject {
@@ -106,9 +112,6 @@ export interface AppSettings {
   objectShape: ShapeType;
   objectMaterial: MaterialType;
   
-  // UI Settings
-  uiStyle: 'solid' | 'glass';
-  
   // Visual settings
   enableEffects: boolean;
   filmGrain: number;
@@ -116,4 +119,11 @@ export interface AppSettings {
   vignetteIntensity: number;
   scanlineIntensity: number;
   gameOfLife: boolean;
+  uiGraphicsMode: boolean;
+  uiGlassBlur: number;
+  uiGlassOpacity: number;
+  uiBorderOpacity: number;
+  uiGridOpacity: number;
+  uiTextShadowIntensity: number;
+  uiParallaxIntensity: number;
 }

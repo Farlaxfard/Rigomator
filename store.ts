@@ -15,9 +15,9 @@ const ENVIRONMENTS: EnvironmentType[] = ['void', 'grid', 'vaporwave', 'matrix', 
  */
 interface AppState {
   // Tracking Data
-  handData: HandData;
+  hands: HandData[];
   faceData: FaceData;
-  setHandData: (data: Partial<HandData>) => void;
+  setHands: (hands: HandData[]) => void;
   setFaceData: (data: Partial<FaceData>) => void;
   
   // Video Stream for Debugger
@@ -76,16 +76,15 @@ interface AppState {
   // Camera Management
   cameraIndex: number;
   cameraName: string;
+  setCameraName: (name: string) => void;
   cameraEnabled: boolean;
   toggleCamera: () => void;
   isCameraSwitching: boolean;
   cycleCamera: () => void;
   setCameraSwitching: (isSwitching: boolean) => void;
-  setCameraName: (name: string) => void;
-  cameraResetTrigger: number; // Signal to reset camera position
-}
-
-const DEFAULT_SETTINGS: AppSettings = {
+  cameraResetTrigger: number;
+  }
+  const DEFAULT_SETTINGS: AppSettings = {
     gravity: -9.81,
     bloomIntensity: 1.5,
     timeScale: 1.0,
@@ -98,14 +97,13 @@ const DEFAULT_SETTINGS: AppSettings = {
     particleEffect: 'cyber',
     objectShape: 'cube',
     objectMaterial: 'glass', // Default Glass
-    uiStyle: 'glass', // Default Glass
-    
+
     // New Defaults - Maxed Out
     spawnRate: 0.5,
     handTrackingSpeed: 0.6, // Normal Speed
     headPanSensitivity: 0.5, // Changed to 0.5
     headRotationSensitivity: 0.5, // Changed to 0.5
-    
+
     // Visuals - Defaults from screenshot
     enableEffects: false,
     filmGrain: 0.04,
@@ -113,12 +111,19 @@ const DEFAULT_SETTINGS: AppSettings = {
     vignetteIntensity: 0.10,
     scanlineIntensity: 0.13, // Increased default
     gameOfLife: false,
-};
+    uiGraphicsMode: false, // Default off for performance
+    uiGlassBlur: 6,
+    uiGlassOpacity: 0.51,
+    uiBorderOpacity: 0.03,
+    uiGridOpacity: 0.03,
+    uiTextShadowIntensity: 0.54,
+    uiParallaxIntensity: 7.0,
+  };
 
 export const useStore = create<AppState>((set, get) => ({
-  handData: { present: false, landmarks: [], rigLandmarks: [], gesture: GestureType.NONE, metrics: { pinch: 0, fist: 0, palm: 0, peace: 0, pointing: 0, pinkyUp: 0, threeFingers: 0 }, pinchDistance: 1, worldPosition: [0, 0, 0] },
+  hands: [],
   faceData: { present: false, position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 } },
-  setHandData: (data) => set((state) => ({ handData: { ...state.handData, ...data } })),
+  setHands: (hands) => set({ hands }),
   setFaceData: (data) => set((state) => ({ faceData: { ...state.faceData, ...data } })),
   
   videoStream: null,
@@ -197,6 +202,6 @@ export const useStore = create<AppState>((set, get) => ({
   isCameraSwitching: false,
   cycleCamera: () => set((state) => ({ cameraIndex: state.cameraIndex + 1, isCameraSwitching: true })),
   setCameraSwitching: (val) => set({ isCameraSwitching: val }),
-  setCameraName: (name) => set({ cameraName: name.toLowerCase() }),
+  setCameraName: (name: string) => set({ cameraName: name.toLowerCase() }),
   cameraResetTrigger: 0,
 }));

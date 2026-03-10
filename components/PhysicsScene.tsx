@@ -45,20 +45,76 @@ const Boundaries = () => {
     return null;
 };
 
+// --- TRACKING VOLUME BORDER ---
+const TrackingVolume = () => {
+    const boxColor = '#ff3b30'; // Mandatory Red 💉
+    const materialRef = useRef<THREE.MeshStandardMaterial>(null);
+
+    useFrame((state) => {
+        if (materialRef.current) {
+            // Subtle pulse on the fill, adjusted for better visibility
+            const pulse = 0.12 + Math.sin(state.clock.elapsedTime * 2) * 0.04;
+            materialRef.current.opacity = pulse;
+            materialRef.current.emissiveIntensity = 0.4 + Math.sin(state.clock.elapsedTime * 2) * 0.2;
+        }
+    });
+
+    return (
+        <group>
+            {/* Main Transparent Volume Box with more distinct fill */}
+            <mesh position={[0, 0, 0]}>
+                <boxGeometry args={[35, 20, 15]} />
+                <meshStandardMaterial
+                    ref={materialRef}
+                    color={boxColor}
+                    transparent
+                    opacity={0.15}
+                    side={THREE.DoubleSide}
+                    roughness={0}
+                    metalness={0.8}
+                    emissive={boxColor}
+                    emissiveIntensity={0.6}
+                    depthWrite={false}
+                />
+            </mesh>
+            {/* Inner Glow Border */}
+            <mesh position={[0, 0, 0]}>
+                <boxGeometry args={[35, 20, 15]} />
+                <meshBasicMaterial color={boxColor} wireframe transparent opacity={0.2} />
+            </mesh>
+            {/* Thick Corners for Minecraft Vibe */}
+            {[-1, 1].map(x => [-1, 1].map(y => [-1, 1].map(z => (
+                <group key={`${x}-${y}-${z}`} position={[17.5 * x, 10 * y, 7.5 * z]}>
+                    <mesh scale={[1.5, 0.15, 0.15]}>
+                        <boxGeometry />
+                        <meshBasicMaterial color={boxColor} transparent opacity={0.2} />
+                    </mesh>
+                    <mesh scale={[0.15, 1.5, 0.15]}>
+                        <boxGeometry />
+                        <meshBasicMaterial color={boxColor} transparent opacity={0.2} />
+                    </mesh>
+                    <mesh scale={[0.15, 0.15, 1.5]}>
+                        <boxGeometry />
+                        <meshBasicMaterial color={boxColor} transparent opacity={0.2} />
+                    </mesh>
+                </group>
+            ))))}        </group>
+    );
+};
+
 // --- HAND DROP SHADOW ---
-const HandDropShadow = () => {
-    const handData = useStore(s => s.handData);
+const HandDropShadow = ({ index }: { index: number }) => {
+    const hand = useStore(s => s.hands[index]);
     const shadowRef = useRef<THREE.Mesh>(null);
 
     useFrame(() => {
         if (!shadowRef.current) return;
         
-        if (handData.present) {
-            shadowRef.current.position.set(handData.worldPosition[0], -5.95, handData.worldPosition[2]);
+        if (hand?.present) {
+            shadowRef.current.position.set(hand.worldPosition[0], -5.95, hand.worldPosition[2]);
             shadowRef.current.visible = true;
-            const height = handData.worldPosition[1] - (-6);
+            const height = hand.worldPosition[1] - (-6);
             const scale = 1 + (Math.max(0, height) * 0.15);
-            // Optimization: Detect height purely via math, no extra object creation
             const opacity = Math.max(0.1, 0.6 - (height * 0.05));
             shadowRef.current.scale.set(scale, scale, 1);
             (shadowRef.current.material as THREE.MeshBasicMaterial).opacity = opacity;
@@ -75,89 +131,80 @@ const HandDropShadow = () => {
     );
 };
 
-// --- GAME OF LIFE (OPTIMIZED) ---
+// --- GAME OF LIFE (ULTRA OPTIMIZED) ---
 const GameOfLifeFloor = () => {
-    const handData = useStore(s => s.handData);
+    const hands = useStore(s => s.hands);
     const rows = 30;
     const cols = 30;
     const count = rows * cols;
     const meshRef = useRef<THREE.InstancedMesh>(null);
-    // Use Int8Array for grid state (much less memory)
-    const [grid] = useState(() => new Int8Array(count).fill(0));
+    
+    // Dual buffers for zero-allocation simulation
+    const [grid] = useState(() => ({
+        current: new Uint8Array(count),
+        next: new Uint8Array(count)
+    }));
+    
     const lastUpdate = useRef(0);
 
-    // Initial random state
     useEffect(() => {
-        for(let i=0; i<count; i++) grid[i] = Math.random() > 0.8 ? 1 : 0;
+        for(let i=0; i<count; i++) grid.current[i] = Math.random() > 0.8 ? 1 : 0;
     }, []);
 
     useFrame((state) => {
         if (!meshRef.current) return;
         const now = state.clock.elapsedTime;
         
-        // Input: Map hand position to grid index
-        let newLifeIdx = -1;
-        if (handData.present) {
-            const hx = handData.worldPosition[0];
-            const hz = handData.worldPosition[2];
-            const gx = Math.floor((hx + 30) / 2);
-            const gz = Math.floor((hz + 30) / 2);
-            if (gx >= 0 && gx < cols && gz >= 0 && gz < rows) {
-                newLifeIdx = gz * cols + gx;
+        let newLifeIndices: number[] = [];
+        hands.forEach(hand => {
+            if (hand.present) {
+                const hx = hand.worldPosition[0];
+                const hz = hand.worldPosition[2];
+                const gx = Math.floor((hx + 30) / 2);
+                const gz = Math.floor((hz + 30) / 2);
+                if (gx >= 0 && gx < cols && gz >= 0 && gz < rows) {
+                    newLifeIndices.push(gz * cols + gx);
+                }
             }
-        }
+        });
 
-        // Logic Update Rate (10Hz)
         if (now - lastUpdate.current > 0.1) {
             lastUpdate.current = now;
-            // Double buffer simulation using a temporary array would be safer, 
-            // but mutating in place adds chaos which fits the aesthetic.
-            const nextGrid = new Int8Array(grid);
+            const { current, next } = grid;
             
             for (let i = 0; i < count; i++) {
-                const r = Math.floor(i / cols);
+                const r = (i / cols) | 0;
                 const c = i % cols;
                 let neighbors = 0;
                 
-                // Unrolled neighbor check for speed
-                // Top
-                if (r > 0) {
-                    if (grid[(r-1)*cols + c]) neighbors++;
-                    if (c > 0 && grid[(r-1)*cols + c-1]) neighbors++;
-                    if (c < cols-1 && grid[(r-1)*cols + c+1]) neighbors++;
+                // Efficient neighbor check with boundary protection
+                for (let dr = -1; dr <= 1; dr++) {
+                    for (let dc = -1; dc <= 1; dc++) {
+                        if (dr === 0 && dc === 0) continue;
+                        const nr = r + dr;
+                        const nc = c + dc;
+                        if (nr >= 0 && nr < rows && nc >= 0 && nc < cols) {
+                            if (current[nr * cols + nc]) neighbors++;
+                        }
+                    }
                 }
-                // Bottom
-                if (r < rows-1) {
-                    if (grid[(r+1)*cols + c]) neighbors++;
-                    if (c > 0 && grid[(r+1)*cols + c-1]) neighbors++;
-                    if (c < cols-1 && grid[(r+1)*cols + c+1]) neighbors++;
-                }
-                // Sides
-                if (c > 0 && grid[r*cols + c-1]) neighbors++;
-                if (c < cols-1 && grid[r*cols + c+1]) neighbors++;
 
-                const alive = grid[i] === 1;
-                if (alive) nextGrid[i] = (neighbors === 2 || neighbors === 3) ? 1 : 0;
-                else nextGrid[i] = (neighbors === 3) ? 1 : 0;
-                
-                if (i === newLifeIdx) nextGrid[i] = 1;
+                const isAlive = current[i] === 1;
+                next[i] = (isAlive ? (neighbors === 2 || neighbors === 3) : (neighbors === 3)) ? 1 : 0;
+                if (newLifeIndices.includes(i)) next[i] = 1;
             }
-            grid.set(nextGrid);
+            // Swap buffers
+            current.set(next);
         }
 
-        // Render Loop
         const black = new THREE.Color('#111111');
         const aliveColor = new THREE.Color();
         
         for (let i = 0; i < count; i++) {
-            const r = Math.floor(i / cols);
-            const c = i % cols;
-            const x = (c * 2) - 30;
-            const z = (r * 2) - 30;
-            const isAlive = grid[i] === 1;
+            const isAlive = grid.current[i] === 1;
             const targetY = isAlive ? -5 : -6.5; 
             
-            _dummyObj.position.set(x, targetY, z);
+            _dummyObj.position.set(((i % cols) * 2) - 30, targetY, ((i / cols | 0) * 2) - 30);
             _dummyObj.scale.set(0.9, 0.9, 0.9);
             _dummyObj.updateMatrix();
             meshRef.current.setMatrixAt(i, _dummyObj.matrix);
@@ -184,136 +231,138 @@ const GameOfLifeFloor = () => {
 // --- ENVIRONMENTS ---
 const EnvironmentManager = React.memo(() => {
     const settings = useStore(s => s.settings);
-    return (
-        <group>
-            {settings.gameOfLife && <GameOfLifeFloor />}
-            {!settings.gameOfLife && (
-                <>
-                {settings.environment === 'void' && <gridHelper args={[100, 10]} position={[0,-6,0]} visible={false} />}
-                {settings.environment === 'grid' && (
-                    <group position={[0,-6,0]}>
-                        <mesh receiveShadow rotation={[-Math.PI/2,0,0]} position={[0, -0.01, 0]}>
-                            <planeGeometry args={[200,200]} />
-                            <meshStandardMaterial color="#222" />
-                        </mesh>
-                        <Grid infiniteGrid sectionColor="#555" cellColor="#333" position={[0, 0.01, 0]} />
-                    </group>
-                )}
-                {settings.environment === 'vaporwave' && (
-                    <group position={[0,-6,0]}>
-                        <mesh receiveShadow rotation={[-Math.PI/2,0,0]} position={[0, -0.01, 0]}>
-                            <planeGeometry args={[400,400]} />
-                            <meshStandardMaterial color="#2d004d" />
-                        </mesh>
-                        <Grid infiniteGrid sectionColor="#ff00ff" cellColor="#00ffff" sectionSize={10} cellSize={2} position={[0, 0.01, 0]} />
-                        <ambientLight intensity={2} color="#ff00ff" />
-                    </group>
-                )}
-                {settings.environment === 'matrix' && (
-                    <group position={[0,-6,0]}>
-                        <mesh receiveShadow rotation={[-Math.PI/2,0,0]} position={[0, -0.01, 0]}>
-                            <planeGeometry args={[200,200]} />
-                            <meshStandardMaterial color="#001100" />
-                        </mesh>
-                        <Grid infiniteGrid sectionColor="#00ff00" cellColor="#003300" sectionSize={5} cellSize={1} position={[0, 0.01, 0]} />
-                        <fog attach="fog" args={['#002200', 5, 50]} />
-                    </group>
-                )}
-                {settings.environment === 'white_room' && (
-                    <group position={[0,-6,0]}>
-                        <mesh receiveShadow rotation={[-Math.PI/2,0,0]} position={[0, -0.01, 0]}>
-                            <planeGeometry args={[200,200]} />
-                            <meshStandardMaterial color="#e0e0e0" roughness={0.1} />
-                        </mesh>
-                        <Grid infiniteGrid sectionColor="#ccc" cellColor="#f0f0f0" position={[0, 0.01, 0]} />
-                        <ambientLight intensity={0.8} />
-                    </group>
-                )}
-                {settings.environment === 'midnight' && (
-                    <group position={[0,-6,0]}>
-                        <mesh receiveShadow rotation={[-Math.PI/2,0,0]}>
-                            <planeGeometry args={[200,200]} />
-                            <meshStandardMaterial color="#050510" />
-                        </mesh>
-                        <Stars radius={100} depth={50} count={2000} factor={4} saturation={0} fade speed={1} />
-                        <fog attach="fog" args={['#050510', 10, 80]} />
-                    </group>
-                )}
-                {settings.environment === 'sunset' && (
-                    <group position={[0,-6,0]}>
-                        <mesh receiveShadow rotation={[-Math.PI/2,0,0]}>
-                            <planeGeometry args={[200,200]} />
-                            <meshStandardMaterial color="#331111" />
-                        </mesh>
-                        <Sky sunPosition={[100, 10, 100]} turbidity={10} rayleigh={3} />
-                        <ambientLight intensity={0.5} color="#ffaa00" />
-                    </group>
-                )}
-                {settings.environment === 'toxic' && (
-                    <group position={[0,-6,0]}>
-                        <mesh receiveShadow rotation={[-Math.PI/2,0,0]} position={[0, -0.01, 0]}>
-                            <planeGeometry args={[200,200]} />
-                            <meshStandardMaterial color="#1a2010" />
-                        </mesh>
-                        <fog attach="fog" args={['#204010', 0, 60]} />
-                        <Grid infiniteGrid sectionColor="#40ff00" cellColor="#104000" position={[0, 0.01, 0]} />
-                    </group>
-                )}
-                {settings.environment === 'gold' && (
-                    <group position={[0,-6,0]}>
-                        <mesh receiveShadow rotation={[-Math.PI/2,0,0]} position={[0, -0.01, 0]}>
-                            <planeGeometry args={[200,200]} />
-                            <meshStandardMaterial color="#443300" metalness={0.8} roughness={0.2} />
-                        </mesh>
-                        <Environment preset="city" />
-                        <Grid infiniteGrid sectionColor="#ffd700" cellColor="#554400" position={[0, 0.01, 0]} />
-                    </group>
-                )}
-                {settings.environment === 'ice' && (
-                    <group position={[0,-6,0]}>
-                        <mesh receiveShadow rotation={[-Math.PI/2,0,0]}>
-                            <planeGeometry args={[200,200]} />
-                            <meshStandardMaterial color="#88ccff" metalness={0.5} roughness={0.1} />
-                        </mesh>
-                        <fog attach="fog" args={['#e0f0ff', 10, 100]} />
-                        <Sparkles count={300} scale={50} size={4} speed={0.2} opacity={0.5} color="#ffffff" />
-                    </group>
-                )}
-                {settings.environment === 'desert' && (
-                    <group position={[0,-6,0]}>
-                        <mesh receiveShadow rotation={[-Math.PI/2,0,0]}>
-                            <planeGeometry args={[200,200]} />
-                            <meshStandardMaterial color="#eebb88" roughness={1} />
-                        </mesh>
-                        <Sky sunPosition={[10, 50, 10]} turbidity={5} rayleigh={1} mieCoefficient={0.005} />
-                        <fog attach="fog" args={['#eebb88', 20, 100]} />
-                    </group>
-                )}
-                {settings.environment === 'forest' && (
-                    <group position={[0,-6,0]}>
-                        <mesh receiveShadow rotation={[-Math.PI/2,0,0]}>
-                            <planeGeometry args={[200,200]} />
-                            <meshStandardMaterial color="#1a2b1a" roughness={0.8} />
-                        </mesh>
-                        <fog attach="fog" args={['#0a1a0a', 5, 40]} />
-                        <Sparkles count={100} scale={20} size={2} speed={0.5} opacity={0.6} color="#55ff55" />
-                    </group>
-                )}
-                {settings.environment === 'lava' && (
-                    <group position={[0,-6,0]}>
-                        <mesh receiveShadow rotation={[-Math.PI/2,0,0]} position={[0, -0.01, 0]}>
-                            <planeGeometry args={[200,200]} />
-                            <meshStandardMaterial color="#200000" />
-                        </mesh>
-                        <Grid infiniteGrid sectionColor="#ff2200" cellColor="#440000" position={[0, 0.01, 0]} />
-                        <Sparkles count={200} scale={30} size={6} speed={2} opacity={0.8} color="#ff4400" />
-                        <fog attach="fog" args={['#220000', 5, 60]} />
-                    </group>
-                )}
-                </>
-            )}
-        </group>
-    );
+    
+    // Memoize the background planes and grids to avoid reconstruction
+    const environmentContent = useMemo(() => {
+        if (settings.gameOfLife) return <GameOfLifeFloor />;
+        
+        switch(settings.environment) {
+            case 'void': return <gridHelper args={[100, 10]} position={[0,-6,0]} visible={false} />;
+            case 'grid': return (
+                <group position={[0,-6,0]}>
+                    <mesh receiveShadow rotation={[-Math.PI/2,0,0]} position={[0, -0.01, 0]}>
+                        <planeGeometry args={[200,200]} />
+                        <meshStandardMaterial color="#222" />
+                    </mesh>
+                    <Grid infiniteGrid sectionColor="#555" cellColor="#333" position={[0, 0.01, 0]} />
+                </group>
+            );
+            case 'vaporwave': return (
+                <group position={[0,-6,0]}>
+                    <mesh receiveShadow rotation={[-Math.PI/2,0,0]} position={[0, -0.01, 0]}>
+                        <planeGeometry args={[400,400]} />
+                        <meshStandardMaterial color="#2d004d" />
+                    </mesh>
+                    <Grid infiniteGrid sectionColor="#ff00ff" cellColor="#00ffff" sectionSize={10} cellSize={2} position={[0, 0.01, 0]} />
+                    <ambientLight intensity={2} color="#ff00ff" />
+                </group>
+            );
+            case 'matrix': return (
+                <group position={[0,-6,0]}>
+                    <mesh receiveShadow rotation={[-Math.PI/2,0,0]} position={[0, -0.01, 0]}>
+                        <planeGeometry args={[200,200]} />
+                        <meshStandardMaterial color="#001100" />
+                    </mesh>
+                    <Grid infiniteGrid sectionColor="#00ff00" cellColor="#003300" sectionSize={5} cellSize={1} position={[0, 0.01, 0]} />
+                    <fog attach="fog" args={['#002200', 5, 50]} />
+                </group>
+            );
+            case 'white_room': return (
+                <group position={[0,-6,0]}>
+                    <mesh receiveShadow rotation={[-Math.PI/2,0,0]} position={[0, -0.01, 0]}>
+                        <planeGeometry args={[200,200]} />
+                        <meshStandardMaterial color="#e0e0e0" roughness={0.1} />
+                    </mesh>
+                    <Grid infiniteGrid sectionColor="#ccc" cellColor="#f0f0f0" position={[0, 0.01, 0]} />
+                    <ambientLight intensity={0.8} />
+                </group>
+            );
+            case 'midnight': return (
+                <group position={[0,-6,0]}>
+                    <mesh receiveShadow rotation={[-Math.PI/2,0,0]}>
+                        <planeGeometry args={[200,200]} />
+                        <meshStandardMaterial color="#050510" />
+                    </mesh>
+                    <Stars radius={100} depth={50} count={2000} factor={4} saturation={0} fade speed={1} />
+                    <fog attach="fog" args={['#050510', 10, 80]} />
+                </group>
+            );
+            case 'sunset': return (
+                <group position={[0,-6,0]}>
+                    <mesh receiveShadow rotation={[-Math.PI/2,0,0]}>
+                        <planeGeometry args={[200,200]} />
+                        <meshStandardMaterial color="#331111" />
+                    </mesh>
+                    <Sky sunPosition={[100, 10, 100]} turbidity={10} rayleigh={3} />
+                    <ambientLight intensity={0.5} color="#ffaa00" />
+                </group>
+            );
+            case 'toxic': return (
+                <group position={[0,-6,0]}>
+                    <mesh receiveShadow rotation={[-Math.PI/2,0,0]} position={[0, -0.01, 0]}>
+                        <planeGeometry args={[200,200]} />
+                        <meshStandardMaterial color="#1a2010" />
+                    </mesh>
+                    <fog attach="fog" args={['#204010', 0, 60]} />
+                    <Grid infiniteGrid sectionColor="#40ff00" cellColor="#104000" position={[0, 0.01, 0]} />
+                </group>
+            );
+            case 'gold': return (
+                <group position={[0,-6,0]}>
+                    <mesh receiveShadow rotation={[-Math.PI/2,0,0]} position={[0, -0.01, 0]}>
+                        <planeGeometry args={[200,200]} />
+                        <meshStandardMaterial color="#443300" metalness={0.8} roughness={0.2} />
+                    </mesh>
+                    <Environment preset="city" />
+                    <Grid infiniteGrid sectionColor="#ffd700" cellColor="#554400" position={[0, 0.01, 0]} />
+                </group>
+            );
+            case 'ice': return (
+                <group position={[0,-6,0]}>
+                    <mesh receiveShadow rotation={[-Math.PI/2,0,0]}>
+                        <planeGeometry args={[200,200]} />
+                        <meshStandardMaterial color="#88ccff" metalness={0.5} roughness={0.1} />
+                    </mesh>
+                    <fog attach="fog" args={['#e0f0ff', 10, 100]} />
+                    <Sparkles count={300} scale={50} size={4} speed={0.2} opacity={0.5} color="#ffffff" />
+                </group>
+            );
+            case 'desert': return (
+                <group position={[0,-6,0]}>
+                    <mesh receiveShadow rotation={[-Math.PI/2,0,0]}>
+                        <planeGeometry args={[200,200]} />
+                        <meshStandardMaterial color="#eebb88" roughness={1} />
+                    </mesh>
+                    <Sky sunPosition={[10, 50, 10]} turbidity={5} rayleigh={1} mieCoefficient={0.005} />
+                    <fog attach="fog" args={['#eebb88', 20, 100]} />
+                </group>
+            );
+            case 'forest': return (
+                <group position={[0,-6,0]}>
+                    <mesh receiveShadow rotation={[-Math.PI/2,0,0]}>
+                        <planeGeometry args={[200,200]} />
+                        <meshStandardMaterial color="#1a2b1a" roughness={0.8} />
+                    </mesh>
+                    <fog attach="fog" args={['#0a1a0a', 5, 40]} />
+                    <Sparkles count={100} scale={20} size={2} speed={0.5} opacity={0.6} color="#55ff55" />
+                </group>
+            );
+            case 'lava': return (
+                <group position={[0,-6,0]}>
+                    <mesh receiveShadow rotation={[-Math.PI/2,0,0]} position={[0, -0.01, 0]}>
+                        <planeGeometry args={[200,200]} />
+                        <meshStandardMaterial color="#200000" />
+                    </mesh>
+                    <Grid infiniteGrid sectionColor="#ff2200" cellColor="#440000" position={[0, 0.01, 0]} />
+                    <Sparkles count={200} scale={30} size={6} speed={2} opacity={0.8} color="#ff4400" />
+                    <fog attach="fog" args={['#220000', 5, 60]} />
+                </group>
+            );
+            default: return null;
+        }
+    }, [settings.environment, settings.gameOfLife]);
+
+    return <group>{environmentContent}</group>;
 });
 
 // --- INTERACTIVE PHYSICS OBJECTS ---
@@ -423,8 +472,13 @@ const SmartObjectDispatcher = React.memo((props: PhysicsObjectType) => {
         if (type === 'cloud') return; 
 
         const impact = Math.abs(e.contact.impactVelocity);
-        if (impact > 1.5) {
-             audio.play3D('collide', [0,0,0], settings.soundVolume * Math.min(1, impact/10));
+        if (impact > 1.2) {
+             audio.play3D('collide', [0,0,0], settings.soundVolume * Math.min(1, impact/8));
+             
+             // Visual impact feedback
+             if (materialRef.current) {
+                 materialRef.current.emissiveIntensity = 2.0;
+             }
         }
     }, [type, settings.soundVolume]);
 
@@ -448,7 +502,7 @@ const SmartObjectDispatcher = React.memo((props: PhysicsObjectType) => {
     }, [settings.bounciness, settings.friction, api]);
 
     const isGrabbed = useRef(false);
-    const handData = useStore(s => s.handData);
+    const grabbingHandIdx = useRef<number>(-1);
     const velocity = useRef([0,0,0]);
     useEffect(() => api.velocity.subscribe((v: any) => { velocity.current = v }), [api.velocity]);
     
@@ -467,88 +521,129 @@ const SmartObjectDispatcher = React.memo((props: PhysicsObjectType) => {
         // Run logic only if rigid body is active
         if (ref.current) {
             // PULLED DIRECTLY FROM STORE FOR 0-LATENCY 💅
-            const latestHand = useStore.getState().handData;
-            const latestGesture = latestHand.gesture;
+            const hands = useStore.getState().hands;
             
-            // PROXIMITY TINT LOGIC - OPTIMIZED to use Squared Distance
-            // Only check if we are not a cloud
+            // PROXIMITY TINT LOGIC - OPTIMIZED
             if (type !== 'cloud' && materialRef.current) {
                 const cloudRefs = useStore.getState().cloudRefs;
-                let minSqDist = Infinity; // Using squared distance to avoid Math.sqrt
+                const cloudKeys = Object.keys(cloudRefs);
                 
-                _bodyPos.copy(ref.current.position);
-                
-                // Optimized Loop
-                // Getting values from object lookup is fast
-                const keys = Object.keys(cloudRefs);
-                for (let i = 0; i < keys.length; i++) {
-                    const cloud = cloudRefs[keys[i]];
-                    if (cloud) {
-                        const sqDist = _bodyPos.distanceToSquared(cloud.position);
-                        if (sqDist < minSqDist) minSqDist = sqDist;
-                    }
-                }
-
-                // Threshold 15 -> Squared 225
-                if (minSqDist < 225) {
-                    const dist = Math.sqrt(minSqDist);
-                    const tintFactor = 1 - (Math.max(0, dist - 5) / 10); // 0 to 1
-                    const cloudColor = cameraBrightness > 0.5 ? '#ffffff' : '#333333';
-                    _targetTint.set(cloudColor);
-                    _baseColor.set(color);
-                    _tempColor.copy(_baseColor).lerp(_targetTint, tintFactor * 0.9);
+                if (cloudKeys.length > 0) {
+                    let minSqDist = Infinity; 
+                    _bodyPos.copy(ref.current.position);
                     
-                    if (materialRef.current.color) {
-                        materialRef.current.color.lerp(_tempColor, 0.1);
+                    for (let i = 0; i < cloudKeys.length; i++) {
+                        const cloud = cloudRefs[cloudKeys[i]];
+                        if (cloud) {
+                            const sqDist = _bodyPos.distanceToSquared(cloud.position);
+                            if (sqDist < minSqDist) minSqDist = sqDist;
+                        }
+                    }
+
+                    // Threshold 12 -> Squared 144
+                    if (minSqDist < 144) {
+                        const dist = Math.sqrt(minSqDist);
+                        const tintFactor = 1 - (Math.max(0, dist - 3) / 9); // 0 to 1
+                        const cloudColor = cameraBrightness > 0.5 ? '#ffffff' : '#333333';
+                        _targetTint.set(cloudColor);
+                        _baseColor.set(color);
+                        _tempColor.copy(_baseColor).lerp(_targetTint, tintFactor * 0.85);
+                        
+                        materialRef.current.color.lerp(_tempColor, 0.15);
+                    } else {
+                         _baseColor.set(color);
+                         materialRef.current.color.lerp(_baseColor, 0.08);
                     }
                 } else {
-                     // Revert to original color
+                     // No clouds, ensure original color
                      _baseColor.set(color);
-                     if (materialRef.current.color) {
-                         materialRef.current.color.lerp(_baseColor, 0.05);
+                     if (materialRef.current.color.getHex() !== _baseColor.getHex()) {
+                         materialRef.current.color.lerp(_baseColor, 0.08);
                      }
                 }
             }
 
             // Grab Logic - reworked for absolute clinginess 💅
-            if (latestHand.present && latestGesture === GestureType.PINCH) {
-                 _bodyPos.copy(ref.current.position); 
-                 _handPos.set(latestHand.worldPosition[0], latestHand.worldPosition[1], latestHand.worldPosition[2]);
-                 const sqDist = _handPos.distanceToSquared(_bodyPos);
-                 
-                 // if we're close enough, start the haunting
-                 // larger radius (60) because we're desperate for connection 💀
-                 if (sqDist < 60) isGrabbed.current = true; 
-                 
-                 if (isGrabbed.current) {
-                     api.wakeUp();
-                     // god-mode movement: we tell the object exactly where to be
-                     // snapSpeed 40 for instant results 🌌
-                     const snapSpeed = 40; 
-                     api.velocity.set(
-                         (_handPos.x - _bodyPos.x) * snapSpeed,
-                         (_handPos.y - _bodyPos.y) * snapSpeed,
-                         (_handPos.z - _bodyPos.z) * snapSpeed
-                     );
-                     api.angularDamping.set(0.9); 
-                     api.linearDamping.set(0.1); 
-                 }
-             } else { 
-                 // the ghost is gone. goodbye. 🌌
-                 if (isGrabbed.current) {
-                     // give it a little toss based on the last known speed
-                     api.velocity.set(velocity.current[0], velocity.current[1], velocity.current[2]);
-                 }
-                 isGrabbed.current = false; 
-             }
+            let currentGrabbingHand = grabbingHandIdx.current !== -1 ? hands[grabbingHandIdx.current] : null;
+            
+            // If not grabbed, look for a hand to grab with
+            if (!isGrabbed.current) {
+                for (let i = 0; i < hands.length; i++) {
+                    const hand = hands[i];
+                    if (hand.present && hand.gesture === GestureType.PINCH) {
+                        _bodyPos.copy(ref.current.position); 
+                        _handPos.set(hand.worldPosition[0], hand.worldPosition[1], hand.worldPosition[2]);
+                        const sqDist = _handPos.distanceToSquared(_bodyPos);
+                        if (sqDist < 35) {
+                            isGrabbed.current = true;
+                            grabbingHandIdx.current = i;
+                            currentGrabbingHand = hand;
+                            audio.play3D('grab', hand.worldPosition, settings.soundVolume);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (isGrabbed.current && currentGrabbingHand && currentGrabbingHand.present && currentGrabbingHand.gesture === GestureType.PINCH) {
+                api.wakeUp();
+                _bodyPos.copy(ref.current.position); 
+                _handPos.set(currentGrabbingHand.worldPosition[0], currentGrabbingHand.worldPosition[1], currentGrabbingHand.worldPosition[2]);
+                
+                // PD Controller for smooth, forceful grabbing 🧲
+                const stiffness = 200; // Spring strength
+                const damping = 10;   // Resistance to oscillation
+                
+                const forceX = (_handPos.x - _bodyPos.x) * stiffness;
+                const forceY = (_handPos.y - _bodyPos.y) * stiffness;
+                const forceZ = (_handPos.z - _bodyPos.z) * stiffness;
+                
+                const dampX = -velocity.current[0] * damping;
+                const dampY = -velocity.current[1] * damping;
+                const dampZ = -velocity.current[2] * damping;
+                
+                api.applyForce(
+                    [forceX + dampX, forceY + dampY, forceZ + dampZ],
+                    [_bodyPos.x, _bodyPos.y, _bodyPos.z] 
+                );
+                
+                api.velocity.set(
+                    velocity.current[0] * 0.8 + currentGrabbingHand.velocity[0] * 0.2,
+                    velocity.current[1] * 0.8 + currentGrabbingHand.velocity[1] * 0.2,
+                    velocity.current[2] * 0.8 + currentGrabbingHand.velocity[2] * 0.2
+                );
+
+                api.angularDamping.set(0.9); 
+                api.linearDamping.set(0.1); 
+            } else if (isGrabbed.current) {
+                // Release logic
+                if (currentGrabbingHand) {
+                    const flingVel = [
+                        velocity.current[0] + currentGrabbingHand.velocity[0] * 1.5,
+                        velocity.current[1] + currentGrabbingHand.velocity[1] * 1.5,
+                        velocity.current[2] + currentGrabbingHand.velocity[2] * 1.5
+                    ];
+                    api.velocity.set(flingVel[0], flingVel[1], flingVel[2]);
+                    
+                    const speed = Math.sqrt(flingVel[0]**2 + flingVel[1]**2 + flingVel[2]**2);
+                    if (speed > 10) {
+                        audio.play3D('fling', currentGrabbingHand.worldPosition, settings.soundVolume);
+                    } else {
+                        audio.play3D('release', currentGrabbingHand.worldPosition, settings.soundVolume);
+                    }
+                }
+                isGrabbed.current = false; 
+                grabbingHandIdx.current = -1;
+            }
              
-             if (latestGesture === GestureType.CLOSED_FIST && !isGrabbed.current) { 
+            // SLOW MO (CLOSED FIST) check for ANY hand
+            const isAnySlowMo = hands.some(h => h.present && h.gesture === GestureType.CLOSED_FIST);
+            if (isAnySlowMo && !isGrabbed.current) { 
                  api.linearDamping.set(0.99); api.angularDamping.set(0.99); 
-             } else if (!isGrabbed.current) { 
-                 // Reset damping
+            } else if (!isGrabbed.current) { 
                  api.linearDamping.set(type === 'cloud' ? 0.95 : 0.05); 
                  api.angularDamping.set(0.05); 
-             }
+            }
     
              // VISUAL CUE LOGIC (Emissive)
              if (materialRef.current) {
@@ -606,8 +701,8 @@ const Bone: React.FC<{ start: number[], end: number[], material: THREE.MeshStand
 };
 
 // IMPROVED HAND PHYSICS: Kinematic Velocity
-const PhysicsJoint: React.FC<{ index: number, material: THREE.Material }> = ({ index, material }) => {
-    const handData = useStore(s => s.handData);
+const PhysicsJoint: React.FC<{ handIdx: number, index: number, material: THREE.Material }> = ({ handIdx, index, material }) => {
+    const hand = useStore(s => s.hands[handIdx]);
     const settings = useStore(s => s.settings);
     const [ref, api] = useSphere(() => ({ 
         type: 'Kinematic', 
@@ -620,8 +715,8 @@ const PhysicsJoint: React.FC<{ index: number, material: THREE.Material }> = ({ i
     const prevPos = useRef(new THREE.Vector3(0, -100, 0));
 
     useFrame((state, delta) => {
-        if (handData.present && handData.rigLandmarks[index]) {
-            const [x, y, z] = handData.rigLandmarks[index];
+        if (hand?.present && hand.rigLandmarks[index]) {
+            const [x, y, z] = hand.rigLandmarks[index];
             _targetColor.set(x,y,z); // Reuse as vector target
             
             const alpha = Math.max(0.1, settings.handTrackingSpeed); 
@@ -631,14 +726,7 @@ const PhysicsJoint: React.FC<{ index: number, material: THREE.Material }> = ({ i
             // Set Physics Position
             api.position.set(prevPos.current.x, prevPos.current.y, prevPos.current.z);
             
-            // Calculate Velocity manually so dynamic objects react to the hand moving
-            // Velocity = (Current - Previous) / TimeDelta
             if (delta > 0) {
-                // Approximate velocity for impact
-                // Since we lerped, prevPos is effectively "current"
-                // This part is tricky with lerp, but generally we want to impart force
-                // We set velocity to 0 effectively because Kinematic bodies move via position
-                // However, setting velocity helps collision solvers sometimes
                 api.velocity.set(
                     (x - prevPos.current.x) * 10,
                     (y - prevPos.current.y) * 10,
@@ -658,8 +746,8 @@ const PhysicsJoint: React.FC<{ index: number, material: THREE.Material }> = ({ i
     );
 };
 
-const SphereHandRig = React.memo(() => {
-    const handData = useStore(s => s.handData);
+const SphereHandRig = React.memo(({ index }: { index: number }) => {
+    const hand = useStore(s => s.hands[index]);
     const settings = useStore(s => s.settings);
     const jointIndices = useMemo(() => Array.from({ length: 21 }, (_, i) => i), []);
     const connections = useMemo(() => [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [0, 9], [9, 10], [10, 11], [11, 12], [0, 13], [13, 14], [14, 15], [15, 16], [0, 17], [17, 18], [18, 19], [19, 20]], []);
@@ -672,25 +760,21 @@ const SphereHandRig = React.memo(() => {
     }), []);
 
     useFrame(() => {
-        if (!handData.present) return;
+        if (!hand?.present) return;
         
-        let targetColor = "#00ffff"; 
-        if (settings.particleEffect === 'fire') targetColor = "#ff4400";
-        if (settings.particleEffect === 'water') targetColor = "#0088ff";
-
-        // Fix: Use gesture directly for stable checking instead of raw metric
-        const isInteracting = handData.gesture === GestureType.PINCH;
-        const isAction = handData.gesture !== GestureType.NONE && handData.gesture !== GestureType.OPEN_PALM;
+        let targetColor = hand.color || "#00ffff"; 
+        
+        // Interaction Overrides
+        const isInteracting = hand.gesture === GestureType.PINCH;
+        const isAction = hand.gesture !== GestureType.NONE && hand.gesture !== GestureType.OPEN_PALM;
 
         if (isInteracting) {
             targetColor = "#FFD700"; // GOLD
         }
 
         _targetColor.set(targetColor);
-        // Faster lerp for interaction response
         handMaterial.color.lerp(_targetColor, isInteracting ? 0.4 : 0.1);
         
-        // Massive emissive boost when interacting for proper yellow glow
         const targetEmissive = isInteracting ? 4.0 : (isAction ? 1.0 : 0.5);
         _currentEmit.set(targetColor);
         
@@ -698,15 +782,15 @@ const SphereHandRig = React.memo(() => {
         handMaterial.emissiveIntensity = THREE.MathUtils.lerp(handMaterial.emissiveIntensity, targetEmissive, isInteracting ? 0.4 : 0.1);
     });
 
-    if (!handData.present) return null;
+    if (!hand?.present) return null;
 
     return (
         <group>
             {jointIndices.map((i) => (
-                <PhysicsJoint key={`j-${i}`} index={i} material={handMaterial} />
+                <PhysicsJoint key={`j-${i}-${index}`} handIdx={index} index={i} material={handMaterial} />
             ))}
             {connections.map(([startIdx, endIdx], i) => (
-                <Bone key={`b-${i}`} start={handData.rigLandmarks[startIdx]} end={handData.rigLandmarks[endIdx]} material={handMaterial} />
+                <Bone key={`b-${i}-${index}`} start={hand.rigLandmarks[startIdx]} end={hand.rigLandmarks[endIdx]} material={handMaterial} />
             ))}
         </group>
     );
@@ -715,7 +799,7 @@ const SphereHandRig = React.memo(() => {
 const HeadTrackingCamera = () => {
     const faceData = useStore(s => s.faceData);
     const isCameraSwitching = useStore(s => s.isCameraSwitching);
-    const handData = useStore(s => s.handData);
+    const hands = useStore(s => s.hands);
     const cameraResetTrigger = useStore(s => s.cameraResetTrigger);
     const settings = useStore(s => s.settings);
     const { camera } = useThree();
@@ -740,8 +824,8 @@ const HeadTrackingCamera = () => {
             return;
         }
 
-        const isTimeDilation = handData.gesture === GestureType.CLOSED_FIST;
-        const targetFov = isTimeDilation ? 35 : 45; 
+        const isAnyTimeDilation = hands.some(h => h.present && h.gesture === GestureType.CLOSED_FIST);
+        const targetFov = isAnyTimeDilation ? 35 : 45; 
         const pCamera = camera as THREE.PerspectiveCamera;
         if (pCamera.isPerspectiveCamera) {
             pCamera.fov = THREE.MathUtils.lerp(pCamera.fov, targetFov, 0.1);
@@ -753,7 +837,6 @@ const HeadTrackingCamera = () => {
              camera.position.set(Math.sin(time * 20) * 20, 5, Math.cos(time * 20) * 20);
              camera.lookAt(0,0,0);
         } else {
-            // Updated: Removed Hand Pan logic. Only Head Tracking controls camera now.
             let targetX = 0; let targetY = 5;
             
             const panMult = settings.headPanSensitivity * 4; 
@@ -768,8 +851,8 @@ const HeadTrackingCamera = () => {
             camera.position.lerp(_vec3, 0.05); 
             
             if (faceData.present) {
-                const rotY = -faceData.position.x * rotMult * 0.5; // Inverted Horizontal Rotation
-                const rotX = faceData.position.y * rotMult; // Inverted Pitch from last turn (no negative sign)
+                const rotY = -faceData.position.x * rotMult * 0.5;
+                const rotX = faceData.position.y * rotMult;
                 const baseRotX = -0.27; 
                 
                 camera.rotation.x = THREE.MathUtils.lerp(camera.rotation.x, baseRotX + rotX, 0.1);
@@ -790,49 +873,62 @@ const HeadTrackingCamera = () => {
 }
 
 const GameLogic = () => {
-    const handData = useStore(s => s.handData);
+    const hands = useStore(s => s.hands);
     const addObject = useStore(s => s.addObject);
     const settings = useStore(s => s.settings);
     const clearObjects = useStore(s => s.clearObjects);
-    const [lastSpawnTime, setLastSpawnTime] = useState(0);
-    const [lastClearTime, setLastClearTime] = useState(0);
-    const wasPresent = useRef(false);
+    
+    // Optimized: Use refs for timers to avoid React state overhead in 60fps loop
+    const lastSpawnTimes = useRef<Record<number, number>>({});
+    const lastClearTime = useRef(0);
+    const wasPresent = useRef<Record<number, boolean>>({});
 
     useFrame((state) => {
         if (useStore.getState().isPaused) return;
 
         const now = state.clock.elapsedTime;
-        if (handData.present && !wasPresent.current) { audio.play3D('connect', [0,0,0], settings.soundVolume); wasPresent.current = true; } 
-        else if (!handData.present && wasPresent.current) { wasPresent.current = false; }
         
-        if (!handData.present) return;
-        const [hx, hy, hz] = handData.worldPosition; 
-        
-        // POINTING: Spawn
-        if (handData.gesture === GestureType.POINTING) {
-            // FIXED: Relaxed rate limiting slightly to ensure action is taken
-            if (now - lastSpawnTime > 0.12) {
-                const pos: [number,number,number] = [hx, hy - 1, hz];
-                // Ensure velocity is undefined if not used
-                addObject('box', pos, undefined); 
-                audio.play3D('spawn', pos, settings.soundVolume); 
-                setLastSpawnTime(now);
+        hands.forEach((hand, idx) => {
+            if (hand.present && !wasPresent.current[idx]) { 
+                audio.play3D('connect', [0,0,0], settings.soundVolume); 
+                wasPresent.current[idx] = true; 
+            } else if (!hand.present && wasPresent.current[idx]) { 
+                audio.play3D('disconnect', [0,0,0], settings.soundVolume); 
+                wasPresent.current[idx] = false; 
             }
-        }
-        
-        // PINKY: Clear Objects (With Debounce)
-        if (handData.gesture === GestureType.PINKY_UP) {
-            if (now - lastClearTime > 1.5) {
-                clearObjects();
-                audio.play3D('trash', [0,0,0], 1);
-                setLastClearTime(now);
+            
+            if (!hand.present) return;
+            const [hx, hy, hz] = hand.worldPosition; 
+            
+            // POINTING: Spawn
+            if (hand.gesture === GestureType.POINTING) {
+                const lastSpawn = lastSpawnTimes.current[idx] || 0;
+                if (now - lastSpawn > 0.12) {
+                    const pos: [number,number,number] = [hx, hy - 1, hz];
+                    addObject('box', pos, undefined); 
+                    audio.play3D('spawn', pos, settings.soundVolume); 
+                    lastSpawnTimes.current[idx] = now;
+                }
             }
-        }
-        
-        // PEACE: Liquid
-        if (handData.gesture === GestureType.PEACE) {
-            if (Math.random() > 0.7) addObject('liquid', [hx + (Math.random()-0.5), hy - 1, hz + (Math.random()-0.5)]);
-        }
+            
+            // PINKY: Clear Objects (With Debounce)
+            if (hand.gesture === GestureType.PINKY_UP) {
+                if (now - lastClearTime.current > 1.5) {
+                    clearObjects();
+                    audio.play3D('trash', [0,0,0], 1);
+                    lastClearTime.current = now;
+                }
+            }
+            
+            // PEACE: Liquid
+            if (hand.gesture === GestureType.PEACE) {
+                if (Math.random() > 0.7) {
+                    const pos: [number,number,number] = [hx + (Math.random()-0.5), hy - 1, hz + (Math.random()-0.5)];
+                    addObject('liquid', pos);
+                    audio.play3D('crackle', pos, settings.soundVolume * 0.5);
+                }
+            }
+        });
     });
     return null;
 };
@@ -842,7 +938,6 @@ const GameLogic = () => {
 const PostProcessing = () => {
     const settings = useStore(s => s.settings);
     const isCameraSwitching = useStore(s => s.isCameraSwitching);
-    const handData = useStore(s => s.handData);
     const abRef = useRef<any>(null);
 
     useFrame((state) => {
@@ -871,10 +966,10 @@ const PostProcessing = () => {
 
 const PhysicsScene: React.FC = () => {
   const objects = useStore(s => s.objects);
-  const handData = useStore(s => s.handData);
+  const hands = useStore(s => s.hands);
   const settings = useStore(s => s.settings);
   const isPaused = useStore(s => s.isPaused);
-  const isSlowMo = handData.gesture === GestureType.CLOSED_FIST;
+  const isAnySlowMo = hands.some(h => h.present && h.gesture === GestureType.CLOSED_FIST);
   const physicsStep = (1 / 60) * settings.timeScale;
   
   const bgColor = useMemo(() => {
@@ -895,7 +990,7 @@ const PhysicsScene: React.FC = () => {
       }
   }, [settings.environment]);
 
-  const gravity: [number,number,number] = [0, isSlowMo ? settings.gravity * 0.1 : settings.gravity, 0];
+  const gravity: [number,number,number] = [0, isAnySlowMo ? settings.gravity * 0.1 : settings.gravity, 0];
 
   return (
     <Canvas 
@@ -912,7 +1007,6 @@ const PhysicsScene: React.FC = () => {
       <pointLight position={[-10, 5, -10]} intensity={1.5} color="cyan" />
       <pointLight position={[10, 5, -10]} intensity={1.5} color="purple" />
       
-      {/* HARD OPTIMIZATION: Broadphase SAP (Sweep and Prune) is O(N log N), much faster than default Naive O(N^2) for many objects */}
       <Physics 
         broadphase="SAP"
         isPaused={isPaused} 
@@ -922,8 +1016,13 @@ const PhysicsScene: React.FC = () => {
       >
         <Boundaries />
         <EnvironmentManager />
-        <SphereHandRig />
-        <HandDropShadow />
+        <TrackingVolume />
+        {hands.map((_, idx) => (
+            <React.Fragment key={idx}>
+                <SphereHandRig index={idx} />
+                <HandDropShadow index={idx} />
+            </React.Fragment>
+        ))}
         <GameLogic />
         {objects.map((obj) => <SmartObjectDispatcher key={obj.id} {...obj} />)}
       </Physics>
