@@ -15,7 +15,6 @@
 
 </div>
 
-# Run and deploy your AI Studio app
 ---
 
 ## 🌌 what is rigomator?
@@ -108,18 +107,15 @@ and maybe a little flexing.
 ---
 
 ## 🧑‍💻 created by
-
-This contains everything you need to run your app locally.
 **farlaxfard**  
 developer • designer • menace
-
-View your app in AI Studio: https://ai.studio/apps/drive/1420f9NJ2B13Tzj4fCcJBVvvYfo8DeS9r
 ---
 
 ## Run Locally
 ## 🖤 final note
 
-**Prerequisites:**  Node.js
+**Prerequisites:**  
+> Node.js
 this isn’t software.
 
 this is a space where your body becomes code  
