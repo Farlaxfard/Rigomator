@@ -107,9 +107,11 @@ and maybe a little flexing.
 ---
 
 ## 🧑‍💻 created by
+
 **farlaxfard**  
 
-developer • designer • menace
+>developer • designer • menace
+
 ---
 
 ## Run Locally
