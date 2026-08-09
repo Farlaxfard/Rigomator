@@ -108,6 +108,7 @@ and maybe a little flexing.
 
 ## 🧑‍💻 created by
 **farlaxfard**  
+
 developer • designer • menace
 ---
 
@@ -116,6 +117,7 @@ developer • designer • menace
 
 **Prerequisites:**  
 > Node.js<br/>
+
 this isn’t software.
 
 this is a space where your body becomes code  
