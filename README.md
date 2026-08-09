@@ -115,7 +115,7 @@ developer • designer • menace
 ## 🖤 final note
 
 **Prerequisites:**  
-> Node.js
+> Node.js<br/>
 this isn’t software.
 
 this is a space where your body becomes code  
